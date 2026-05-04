@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>德州扑克计分</title>
+<style>
+:root {
+  --bg: #0f1923;
+  --bg2: #1a2634;
+  --bg3: #243447;
+  --green: #00c853;
+  --green2: #00e676;
+  --red: #ff5252;
+  --red2: #ff8a80;
+  --gold: #ffd740;
+  --gold2: #ffe57f;
+  --blue: #448aff;
+  --blue2: #82b1ff;
+  --text: #e8eaed;
+  --text2: #9aa0a6;
+  --text3: #5f6368;
+  --border: rgba(255,255,255,0.08);
+  --shadow: 0 4px 24px rgba(0,0,0,0.3);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Views */
+.view { display:none; min-height:100vh; }
+.view.active { display:flex; flex-direction:column; }
+
+/* ====== HOME VIEW ====== */
+#homeView {
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: radial-gradient(ellipse at 50% 30%, rgba(0,200,83,0.08) 0%, transparent 60%),
+              var(--bg);
+}
+.home-logo { font-size: 4rem; margin-bottom: 0.5rem; }
+.home-title {
+  font-size: 2rem; font-weight: 700;
+  background: linear-gradient(135deg, var(--green), var(--gold));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  margin-bottom: 0.3rem;
+}
+.home-sub { color: var(--text2); font-size: 0.9rem; margin-bottom: 2.5rem; }
+.home-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 16px; padding: 2rem;
+  width: 100%; max-width: 380px; box-shadow: var(--shadow);
+}
+.input-group { margin-bottom: 1.2rem; }
+.input-group label {
+  display: block; font-size: 0.8rem; color: var(--text2);
+  margin-bottom: 0.4rem; font-weight: 500;
+}
+.input-group input {
+  width: 100%; padding: 0.75rem 1rem;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg3); color: var(--text); font-size: 1rem;
+  outline: none; transition: border-color 0.2s;
+}
+.input-group input:focus { border-color: var(--green); }
+.btn {
+  display: block; width: 100%; padding: 0.8rem;
+  border: none; border-radius: 10px;
+  font-size: 1rem; font-weight: 600; cursor: pointer;
+  transition: all 0.2s; margin-bottom: 0.8rem;
+}
+.btn:active { transform: scale(0.97); }
+.btn-green {
+  background: linear-gradient(135deg, var(--green), #00a844); color: #fff;
+  box-shadow: 0 4px 16px rgba(0,200,83,0.3);
+}
+.btn-green:hover { box-shadow: 0 6px 24px rgba(0,200,83,0.4); }
+.btn-blue {
+  background: linear-gradient(135deg, var(--blue), #2962ff); color: #fff;
+  box-shadow: 0 4px 16px rgba(68,138,255,0.3);
+}
+.btn-blue:hover { box-shadow: 0 6px 24px rgba(68,138,255,0.4); }
+.btn-gold {
+  background: linear-gradient(135deg, var(--gold), #ffab00); color: #1a1a1a;
+  box-shadow: 0 4px 16px rgba(255,215,64,0.3);
+}
+.btn-outline {
+  background: transparent; border: 1px solid var(--border); color: var(--text2);
+}
+.btn-outline:hover { border-color: var(--text2); color: var(--text); }
+.btn-sm { padding: 0.5rem 0.8rem; font-size: 0.85rem; width: auto; margin: 0; }
+.btn-red { background: linear-gradient(135deg, var(--red), #d50000); color: #fff; }
+.divider-line {
+  display: flex; align-items: center; gap: 1rem;
+  margin: 1.5rem 0; color: var(--text3); font-size: 0.8rem;
+}
+.divider-line::before, .divider-line::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+.home-error { color: var(--red); font-size: 0.85rem; margin-top: 0.5rem; min-height: 1.2rem; }
+
+/* ====== NAME VIEW ====== */
+#nameView {
+  align-items: center; justify-content: center; padding: 2rem;
+  background: radial-gradient(ellipse at 50% 30%, rgba(68,138,255,0.08) 0%, transparent 60%), var(--bg);
+}
+.name-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 16px; padding: 2rem;
+  width: 100%; max-width: 380px; box-shadow: var(--shadow); text-align: center;
+}
+.name-card h2 { font-size: 1.3rem; margin-bottom: 0.3rem; }
+.name-card .room-hint { color: var(--blue2); font-size: 0.9rem; margin-bottom: 1.5rem; }
+.name-error { color: var(--red); font-size: 0.85rem; margin-top: 0.5rem; min-height: 1.2rem; }
+
+/* ====== ROOM VIEW ====== */
+#roomView { height: 100vh; overflow: hidden; }
+.room-header {
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+  padding: 0.6rem 1rem;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0; gap: 0.5rem; flex-wrap: wrap;
+}
+.header-left {
+  display: flex; align-items: center; gap: 0.8rem;
+}
+.room-id { font-size: 1.1rem; font-weight: 700; letter-spacing: 0.1em; }
+.room-id span { color: var(--gold); }
+.pot-badge {
+  background: rgba(255,215,64,0.15); border: 1px solid rgba(255,215,64,0.3);
+  color: var(--gold); padding: 0.2rem 0.8rem; border-radius: 20px;
+  font-size: 0.85rem; font-weight: 700; letter-spacing: 0.05em;
+}
+.header-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.room-body {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* My player bar (full width) */
+.my-bar {
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+  padding: 0.8rem 1rem; flex-shrink: 0;
+}
+.my-bar-inner {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  max-width: 800px; margin: 0 auto;
+}
+.my-info {
+  display: flex; align-items: baseline; gap: 0.6rem; min-width: 0;
+}
+.my-info .my-name {
+  font-weight: 700; font-size: 1rem; white-space: nowrap;
+}
+.my-info .my-score {
+  font-size: 1.5rem; font-weight: 700; color: var(--green);
+}
+.my-info .my-loans {
+  font-size: 0.75rem; color: var(--red2); white-space: nowrap;
+}
+.my-controls {
+  display: flex; align-items: center; gap: 0.5rem; flex: 1; min-width: 0;
+  flex-wrap: wrap;
+}
+.amount-stepper {
+  display: flex; align-items: center; gap: 0;
+  border: 1px solid var(--border); border-radius: 10px;
+  overflow: hidden; flex-shrink: 0;
+}
+.amount-stepper button {
+  background: var(--bg3); border: none; color: var(--text);
+  width: 36px; height: 36px; font-size: 1.2rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s;
+}
+.amount-stepper button:hover { background: var(--bg2); }
+.amount-stepper button:active { background: rgba(255,255,255,0.05); }
+.amount-stepper .amt-input {
+  width: 60px; height: 36px; text-align: center;
+  border: none; border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  background: var(--bg); color: var(--text); font-size: 1rem; font-weight: 600;
+  outline: none;
+  -moz-appearance: textfield;
+}
+.amount-stepper .amt-input::-webkit-inner-spin-button,
+.amount-stepper .amt-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+.amount-slider {
+  flex: 1; min-width: 80px; max-width: 200px;
+  -webkit-appearance: none; appearance: none;
+  height: 6px; border-radius: 3px;
+  background: var(--bg3); outline: none;
+}
+.amount-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--blue); cursor: pointer;
+  box-shadow: 0 2px 8px rgba(68,138,255,0.4);
+}
+.amount-slider::-moz-range-thumb {
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--blue); cursor: pointer; border: none;
+}
+.action-btns { display: flex; gap: 0.4rem; flex-shrink: 0; }
+.btn-bet {
+  background: var(--blue); color: #fff;
+  padding: 0.5rem 1rem; border: none; border-radius: 10px;
+  font-size: 0.85rem; font-weight: 700; cursor: pointer;
+}
+.btn-take {
+  background: var(--green); color: #000;
+  padding: 0.5rem 1rem; border: none; border-radius: 10px;
+  font-size: 0.85rem; font-weight: 700; cursor: pointer;
+}
+.btn-loan-sm {
+  background: var(--gold); color: #000;
+  padding: 0.5rem 0.7rem; border: none; border-radius: 10px;
+  font-size: 0.75rem; font-weight: 700; cursor: pointer;
+}
+.action-btns button:active { transform: scale(0.95); }
+
+/* Other players strip */
+.others-strip {
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+  padding: 0.5rem 1rem; flex-shrink: 0;
+  overflow-x: auto; white-space: nowrap;
+  display: flex; gap: 0.5rem;
+}
+.other-chip {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 20px; padding: 0.3rem 0.8rem; font-size: 0.8rem;
+  flex-shrink: 0;
+}
+.other-chip .och-name { font-weight: 600; }
+.other-chip .och-score { color: var(--green2); font-weight: 700; }
+.other-chip .och-loans { color: var(--red2); font-size: 0.7rem; }
+
+/* Log panel */
+.log-panel {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg);
+}
+.log-header {
+  padding: 0.6rem 1rem; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 0.6rem; flex-shrink: 0;
+}
+.log-header h3 { font-size: 0.95rem; color: var(--text2); }
+.round-badge {
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--gold); padding: 0.2rem 0.7rem; border-radius: 20px;
+  font-size: 0.75rem; font-weight: 600;
+}
+.log-list { flex: 1; overflow-y: auto; padding: 0.8rem 1rem; }
+.log-entry {
+  display: flex; align-items: flex-start; gap: 0.7rem;
+  padding: 0.5rem 0; font-size: 0.9rem; animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn {
+  from { opacity:0; transform:translateY(8px); }
+  to { opacity:1; transform:translateY(0); }
+}
+.log-time {
+  color: var(--text3); font-size: 0.7rem; font-family: monospace;
+  min-width: 130px; padding-top: 2px; flex-shrink: 0;
+}
+.log-icon {
+  width: 22px; height: 22px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem; flex-shrink: 0; font-weight: 700;
+}
+.log-icon.bet { background: rgba(68,138,255,0.2); color: var(--blue); }
+.log-icon.take { background: rgba(0,200,83,0.2); color: var(--green); }
+.log-icon.loan { background: rgba(255,215,64,0.2); color: var(--gold); }
+.log-icon.round { background: rgba(68,138,255,0.2); color: var(--blue); }
+.log-icon.leave { background: rgba(154,160,166,0.2); color: var(--text2); }
+.log-text { flex: 1; line-height: 1.5; }
+.log-text .pname { font-weight: 600; color: var(--text); }
+.log-text .amount { font-weight: 700; }
+.log-text .amount.bet { color: var(--blue); }
+.log-text .amount.take { color: var(--green); }
+.log-text .amount.loan { color: var(--gold); }
+.log-divider {
+  display: flex; align-items: center; gap: 0.8rem;
+  padding: 0.6rem 0; color: var(--blue2);
+  font-size: 0.8rem; font-weight: 600; animation: fadeIn 0.3s ease;
+}
+.log-divider::before, .log-divider::after {
+  content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--blue), transparent);
+}
+.log-empty { text-align: center; color: var(--text3); padding: 3rem 1rem; font-size: 0.9rem; }
+
+/* Modal (shared) */
+.modal-overlay {
+  display: none; position: fixed;
+  top:0; left:0; right:0; bottom:0;
+  background: rgba(0,0,0,0.7); z-index: 1000;
+  align-items: center; justify-content: center; padding: 1rem;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 2rem;
+  width: 100%; max-width: 460px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  animation: modalIn 0.3s ease;
+}
+@keyframes modalIn {
+  from { opacity:0; transform:scale(0.9) translateY(20px); }
+  to { opacity:1; transform:scale(1) translateY(0); }
+}
+.modal h2 {
+  font-size: 1.3rem; text-align: center; margin-bottom: 1.5rem;
+  background: linear-gradient(135deg, var(--gold), var(--green));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.data-table {
+  width: 100%; border-collapse: collapse; margin-bottom: 1.5rem;
+}
+.data-table th {
+  padding: 0.6rem 0.4rem; font-size: 0.75rem; color: var(--text2);
+  font-weight: 500; text-align: center; border-bottom: 1px solid var(--border);
+}
+.data-table td {
+  padding: 0.7rem 0.4rem; text-align: center; font-size: 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+.data-table tr:last-child td { border-bottom: none; }
+.data-table .name-col { font-weight: 600; text-align: left; padding-left: 0.5rem; }
+.data-table .rank-col {
+  font-weight: 700; font-size: 1rem; color: var(--gold);
+  text-align: center; width: 40px;
+}
+.profit-pos { color: var(--green); font-weight: 700; }
+.profit-neg { color: var(--red); font-weight: 700; }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .my-bar-inner { gap: 0.6rem; }
+  .my-controls { gap: 0.4rem; }
+  .amount-slider { max-width: 120px; }
+  .btn-bet, .btn-take { padding: 0.5rem 0.7rem; font-size: 0.8rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- HOME VIEW -->
+<div id="homeView" class="view active">
+  <div class="home-logo">🃏</div>
+  <div class="home-title">德州扑克计分</div>
+  <div class="home-sub">创建房间或加入好友房间，开始游戏</div>
+  <div class="home-card">
+    <div class="input-group">
+      <label>你的名称</label>
+      <input type="text" id="nameInput" placeholder="输入你的昵称" maxlength="10" autocomplete="off">
+    </div>
+    <button class="btn btn-green" onclick="createRoom()">创建房间</button>
+    <div class="divider-line">或者</div>
+    <div class="input-group">
+      <label>房间号</label>
+      <input type="text" id="roomInput" placeholder="输入6位房间号" maxlength="6" autocomplete="off" style="text-transform:uppercase">
+    </div>
+    <button class="btn btn-blue" onclick="joinRoomFromHome()">加入房间</button>
+    <div class="home-error" id="homeError"></div>
+  </div>
+</div>
+
+<!-- NAME VIEW (for link join) -->
+<div id="nameView" class="view">
+  <div class="name-card">
+    <h2>加入房间</h2>
+    <div class="room-hint" id="nameViewRoomHint"></div>
+    <div class="input-group">
+      <label>你的名称</label>
+      <input type="text" id="nameViewNameInput" placeholder="输入你的昵称" maxlength="10" autocomplete="off">
+    </div>
+    <button class="btn btn-blue" onclick="joinRoomFromLink()">进入房间</button>
+    <button class="btn btn-outline" onclick="goHome()">返回首页</button>
+    <div class="name-error" id="nameError"></div>
+  </div>
+</div>
+
+<!-- ROOM VIEW -->
+<div id="roomView" class="view">
+  <div class="room-header">
+    <div class="header-left">
+      <div class="room-id">房间: <span id="roomIdDisplay"></span></div>
+      <div class="pot-badge" id="potBadge">Pot: 0</div>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-sm btn-outline" onclick="copyLink()">复制链接</button>
+      <button class="btn btn-sm btn-outline" onclick="requestRank()">Rank</button>
+      <button class="btn btn-sm btn-gold" onclick="requestSettle()">一键结算</button>
+    </div>
+  </div>
+
+  <!-- My player bar (full width) -->
+  <div class="my-bar" id="myBar"></div>
+
+  <!-- Other players strip -->
+  <div class="others-strip" id="othersStrip"></div>
+
+  <!-- Log -->
+  <div class="log-panel">
+    <div class="log-header">
+      <h3>活动记录</h3>
+      <span class="round-badge" id="roundBadge">第 1 轮</span>
+      <button class="btn btn-sm btn-outline" onclick="newRound()" style="margin-left:auto">新轮次</button>
+    </div>
+    <div class="log-list" id="logList"></div>
+  </div>
+</div>
+
+<!-- SETTLEMENT MODAL -->
+<div class="modal-overlay" id="settleModal">
+  <div class="modal">
+    <h2>结算详情</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th class="name-col">玩家</th>
+          <th>原始积分</th>
+          <th>借分</th>
+          <th>当前积分</th>
+          <th>净赚</th>
+        </tr>
+      </thead>
+      <tbody id="settleBody"></tbody>
+    </table>
+    <button class="btn btn-green" onclick="closeSettle()">关闭</button>
+  </div>
+</div>
+
+<!-- RANK MODAL -->
+<div class="modal-overlay" id="rankModal">
+  <div class="modal">
+    <h2>排行榜</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th class="rank-col">#</th>
+          <th class="name-col">玩家</th>
+          <th>当前积分</th>
+        </tr>
+      </thead>
+      <tbody id="rankBody"></tbody>
+    </table>
+    <button class="btn btn-blue" onclick="closeRank()">关闭</button>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+let myRoomId = null;
+let myName = null;
+let lastRoomData = null;
+
+function showView(id) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function goHome() {
+  myRoomId = null; myName = null;
+  showView('homeView');
+}
+
+// Check URL for room param
+const urlParams = new URLSearchParams(window.location.search);
+const roomFromUrl = urlParams.get('room');
+if (roomFromUrl) {
+  document.getElementById('nameViewRoomHint').textContent = '房间号: ' + roomFromUrl.toUpperCase();
+  socket.emit('check-room', roomFromUrl.toUpperCase(), (exists) => {
+    if (exists) showView('nameView');
+    else {
+      document.getElementById('homeError').textContent = '房间 ' + roomFromUrl + ' 不存在';
+      showView('homeView');
+    }
+  });
+}
+
+function createRoom() {
+  const name = document.getElementById('nameInput').value.trim();
+  if (!name) { document.getElementById('homeError').textContent = '请输入你的名称'; return; }
+  myName = name;
+  socket.emit('create-room', name, (roomId) => {
+    myRoomId = roomId;
+    window.history.replaceState(null, '', '?room=' + roomId);
+    enterRoom(roomId);
+  });
+}
+
+function joinRoomFromHome() {
+  const name = document.getElementById('nameInput').value.trim();
+  const roomId = document.getElementById('roomInput').value.trim().toUpperCase();
+  if (!name) { document.getElementById('homeError').textContent = '请输入你的名称'; return; }
+  if (!roomId) { document.getElementById('homeError').textContent = '请输入房间号'; return; }
+  myName = name;
+  socket.emit('check-room', roomId, (exists) => {
+    if (!exists) { document.getElementById('homeError').textContent = '房间不存在'; return; }
+    socket.emit('join-room', { roomId, name }, (res) => {
+      if (!res.ok) { document.getElementById('homeError').textContent = res.msg; return; }
+      myRoomId = roomId;
+      window.history.replaceState(null, '', '?room=' + roomId);
+      enterRoom(roomId);
+    });
+  });
+}
+
+function joinRoomFromLink() {
+  const name = document.getElementById('nameViewNameInput').value.trim();
+  const roomId = roomFromUrl.toUpperCase();
+  if (!name) { document.getElementById('nameError').textContent = '请输入你的名称'; return; }
+  myName = name;
+  socket.emit('join-room', { roomId, name }, (res) => {
+    if (!res.ok) { document.getElementById('nameError').textContent = res.msg; return; }
+    myRoomId = roomId;
+    window.history.replaceState(null, '', '?room=' + roomId);
+    enterRoom(roomId);
+  });
+}
+
+function enterRoom(roomId) {
+  document.getElementById('roomIdDisplay').textContent = roomId;
+  showView('roomView');
+}
+
+// Room update handler
+socket.on('room-update', (data) => {
+  lastRoomData = data;
+  renderMyBar(data);
+  renderOthers(data);
+  renderLogs(data);
+  document.getElementById('roundBadge').textContent = '第 ' + data.currentRound + ' 轮';
+  document.getElementById('potBadge').textContent = 'Pot: ' + data.pot;
+});
+
+function renderMyBar(data) {
+  const me = data.players.find(p => p.name === myName);
+  if (!me) return;
+  const maxVal = Math.max(me.score, 100);
+  document.getElementById('myBar').innerHTML = `
+    <div class="my-bar-inner" style="flex-direction:column;align-items:stretch">
+      <div class="my-info" style="margin-bottom:0.5rem">
+        <span class="my-name">${me.name}</span>
+        <span class="my-score">${me.score}</span>
+        ${me.loans > 0 ? `<span class="my-loans">(已借${me.loans})</span>` : ''}
+      </div>
+      <div class="my-controls">
+        <div class="amount-stepper">
+          <button onclick="adjustAmt(-5)">-</button>
+          <input class="amt-input" type="number" id="betAmt" value="0" min="0" onchange="syncSlider()">
+          <button onclick="adjustAmt(5)">+</button>
+        </div>
+        <input type="range" class="amount-slider" id="amtSlider" min="5" max="${maxVal}" step="5" value="0" oninput="syncFromSlider()">
+        <div class="action-btns">
+          <button class="btn-bet" onclick="doBet()">Bet</button>
+          <button class="btn-take" onclick="doTake()">Take</button>
+          <button class="btn-loan-sm" onclick="doLoan()">借+100</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderOthers(data) {
+  const others = data.players.filter(p => p.name !== myName);
+  const strip = document.getElementById('othersStrip');
+  if (others.length === 0) {
+    strip.style.display = 'none';
+    return;
+  }
+  strip.style.display = 'flex';
+  strip.innerHTML = others.map(p => `
+    <div class="other-chip">
+      <span class="och-name">${p.name}</span>
+      <span class="och-score">${p.score}</span>
+      ${p.loans > 0 ? `<span class="och-loans">(借${p.loans})</span>` : ''}
+    </div>
+  `).join('');
+}
+
+function adjustAmt(delta) {
+  const input = document.getElementById('betAmt');
+  let v = parseInt(input.value) || 0;
+  v = Math.max(0, v + delta);
+  input.value = v;
+  syncSlider();
+}
+
+function syncSlider() {
+  const input = document.getElementById('betAmt');
+  const slider = document.getElementById('amtSlider');
+  if (input && slider) slider.value = input.value;
+}
+
+function syncFromSlider() {
+  const slider = document.getElementById('amtSlider');
+  const input = document.getElementById('betAmt');
+  if (slider && input) input.value = slider.value;
+}
+
+function renderLogs(data) {
+  const list = document.getElementById('logList');
+  if (data.logs.length === 0) {
+    list.innerHTML = '<div class="log-empty">暂无操作记录</div>';
+    return;
+  }
+  list.innerHTML = data.logs.map(log => {
+    const d = new Date(log.timestamp);
+    const pad = n => String(n).padStart(2, '0');
+    const timeStr = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+
+    if (log.type === 'round') {
+      return `<div class="log-divider">第 ${log.round} 轮开始</div>`;
+    }
+
+    let icon = '', text = '';
+    if (log.type === 'bet') {
+      icon = '<div class="log-icon bet">B</div>';
+      text = `<span class="pname">${log.playerName}</span> 下注 <span class="amount bet">-${log.amount}</span>`;
+    } else if (log.type === 'take') {
+      icon = '<div class="log-icon take">T</div>';
+      text = `<span class="pname">${log.playerName}</span> 取走 <span class="amount take">+${log.amount}</span>`;
+    } else if (log.type === 'loan') {
+      icon = '<div class="log-icon loan">L</div>';
+      text = `<span class="pname">${log.playerName}</span> 借分 <span class="amount loan">+${log.amount}</span>`;
+    } else if (log.type === 'leave') {
+      icon = '<div class="log-icon leave">X</div>';
+      text = `<span class="pname">${log.playerName}</span> 离开房间`;
+    }
+
+    return `
+      <div class="log-entry">
+        <span class="log-time">${timeStr}</span>
+        ${icon}
+        <div class="log-text">${text}</div>
+      </div>
+    `;
+  }).join('');
+  list.scrollTop = list.scrollHeight;
+}
+
+function doBet() {
+  const input = document.getElementById('betAmt');
+  const amount = parseInt(input.value);
+  if (!amount || amount <= 0) return;
+  socket.emit('bet', amount);
+  input.value = 0;
+  syncSlider();
+}
+
+function doTake() {
+  const input = document.getElementById('betAmt');
+  const amount = parseInt(input.value);
+  if (!amount || amount <= 0) return;
+  socket.emit('take', amount);
+  input.value = 0;
+  syncSlider();
+}
+
+function doLoan() { socket.emit('loan'); }
+function newRound() { socket.emit('new-round'); }
+
+function copyLink() {
+  const url = window.location.origin + '?room=' + myRoomId;
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = event.target;
+    const orig = btn.textContent;
+    btn.textContent = '已复制!';
+    setTimeout(() => btn.textContent = orig, 1500);
+  }).catch(() => { prompt('复制链接:', url); });
+}
+
+function requestSettle() { socket.emit('settle'); }
+
+socket.on('settle-result', (data) => {
+  const tbody = document.getElementById('settleBody');
+  tbody.innerHTML = data.map(p => {
+    const cls = p.profit >= 0 ? 'profit-pos' : 'profit-neg';
+    const str = (p.profit >= 0 ? '+' : '') + p.profit;
+    return `<tr>
+      <td class="name-col">${p.name}</td><td>${p.originalScore}</td>
+      <td>${p.loans}</td><td>${p.currentScore}</td>
+      <td class="${cls}">${str}</td></tr>`;
+  }).join('');
+  document.getElementById('settleModal').classList.add('active');
+});
+
+function closeSettle() { document.getElementById('settleModal').classList.remove('active'); }
+
+function requestRank() {
+  if (!lastRoomData) return;
+  const sorted = [...lastRoomData.players].sort((a, b) => a.score - b.score);
+  const tbody = document.getElementById('rankBody');
+  tbody.innerHTML = sorted.map((p, i) => `
+    <tr>
+      <td class="rank-col">${i + 1}</td>
+      <td class="name-col">${p.name}</td>
+      <td style="font-weight:700;color:${p.score >= 1000 ? 'var(--green)' : 'var(--red)'}">${p.score}</td>
+    </tr>
+  `).join('');
+  document.getElementById('rankModal').classList.add('active');
+}
+
+function closeRank() { document.getElementById('rankModal').classList.remove('active'); }
+
+document.querySelectorAll('.modal-overlay').forEach(el => {
+  el.addEventListener('click', (e) => { if (e.target === e.currentTarget) el.classList.remove('active'); });
+});
+</script>
+
+</body>
+</html>
