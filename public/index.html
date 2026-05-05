@@ -751,7 +751,7 @@ function closeSettle() { document.getElementById('settleModal').classList.remove
 
 function requestRank() {
   if (!lastRoomData) return;
-  const sorted = [...lastRoomData.players].sort((a, b) => a.score - b.score);
+  const sorted = [...lastRoomData.players].sort((a, b) => b.score - a.score);
   const tbody = document.getElementById('rankBody');
   tbody.innerHTML = sorted.map((p, i) => `
     <tr>
