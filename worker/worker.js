@@ -12,21 +12,14 @@ export class Room {
 
     // WebSocket upgrade
     if (url.pathname === '/ws') {
-      // Load created state from storage
       if (!this.created) {
         this.created = (await this.state.storage.get('created')) === true;
       }
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
       this.state.acceptWebSocket(server);
-      server.addEventListener('message', (event) => {
-        let msg;
-        try { msg = JSON.parse(event.data); } catch { return; }
-        this.handleMessage(server, msg);
-      });
-      server.addEventListener('close', () => {
-        this.handleDisconnect(server);
-      });
+      // Store name on the server socket for later use
+      server.roomPlayerName = null;
       return new Response(null, { status: 101, webSocket: client });
     }
 
@@ -43,12 +36,16 @@ export class Room {
     return new Response('Not found', { status: 404 });
   }
 
-  handleMessage(ws, msg) {
-    switch (msg.type) {
+  // Hibernation API: handle incoming WebSocket messages
+  async webSocketMessage(ws, msg) {
+    let data;
+    try { data = JSON.parse(msg); } catch { return; }
+
+    switch (data.type) {
       case 'create-room': {
-        const name = msg.name;
+        const name = data.name;
         this.players.push({ ws, name, score: 1000, originalScore: 1000, loans: 0 });
-        ws.playerName = name;
+        ws.roomPlayerName = name;
         this.created = true;
         this.state.storage.put('created', true);
         const roomId = this.state.id.name;
@@ -57,9 +54,13 @@ export class Room {
         break;
       }
       case 'join-room': {
-        const { name } = msg;
+        const { name } = data;
         if (!this.created) {
           ws.send(JSON.stringify({ type: 'join-result', ok: false, msg: '房间不存在' }));
+          return;
+        }
+        if (this.players.find(p => p.ws === ws)) {
+          ws.send(JSON.stringify({ type: 'join-result', ok: false, msg: '你已经加入了' }));
           return;
         }
         if (this.players.find(p => p.name === name)) {
@@ -67,24 +68,24 @@ export class Room {
           return;
         }
         this.players.push({ ws, name, score: 1000, originalScore: 1000, loans: 0 });
-        ws.playerName = name;
+        ws.roomPlayerName = name;
         ws.send(JSON.stringify({ type: 'join-result', ok: true }));
         this.broadcastRoomUpdate();
         break;
       }
       case 'bet': {
         const player = this.players.find(p => p.ws === ws);
-        if (!player || msg.amount <= 0 || msg.amount > player.score) return;
-        player.score -= msg.amount;
-        this.logs.push({ type: 'bet', playerName: player.name, amount: msg.amount, round: this.currentRound, timestamp: Date.now() });
+        if (!player || data.amount <= 0 || data.amount > player.score) return;
+        player.score -= data.amount;
+        this.logs.push({ type: 'bet', playerName: player.name, amount: data.amount, round: this.currentRound, timestamp: Date.now() });
         this.broadcastRoomUpdate();
         break;
       }
       case 'take': {
         const player = this.players.find(p => p.ws === ws);
-        if (!player || msg.amount <= 0) return;
-        player.score += msg.amount;
-        this.logs.push({ type: 'take', playerName: player.name, amount: msg.amount, round: this.currentRound, timestamp: Date.now() });
+        if (!player || data.amount <= 0) return;
+        player.score += data.amount;
+        this.logs.push({ type: 'take', playerName: player.name, amount: data.amount, round: this.currentRound, timestamp: Date.now() });
         this.broadcastRoomUpdate();
         break;
       }
@@ -118,12 +119,13 @@ export class Room {
     }
   }
 
-  handleDisconnect(ws) {
+  async webSocketClose(ws, code, reason) {
     const idx = this.players.findIndex(p => p.ws === ws);
     if (idx === -1) return;
     const player = this.players[idx];
     this.logs.push({ type: 'leave', playerName: player.name, round: this.currentRound, timestamp: Date.now() });
     this.players.splice(idx, 1);
+    ws.close(code, reason);
     if (this.players.length === 0) {
       this.players = [];
       this.logs = [];
@@ -156,8 +158,9 @@ export class Room {
 
   broadcast(msg) {
     const data = JSON.stringify(msg);
-    for (const player of this.players) {
-      try { player.ws.send(data); } catch {}
+    const clients = this.state.getWebSockets();
+    for (const client of clients) {
+      try { client.send(data); } catch {}
     }
   }
 }
