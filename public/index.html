@@ -138,6 +138,14 @@ body {
   font-size: 0.85rem; font-weight: 700; letter-spacing: 0.05em;
 }
 .header-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.member-list {
+  display: flex; gap: 0.3rem; flex-wrap: wrap; align-items: center;
+}
+.member-name {
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2); padding: 0.15rem 0.5rem; border-radius: 12px;
+  font-size: 0.7rem; white-space: nowrap;
+}
 .room-body {
   flex: 1; display: flex; flex-direction: column; overflow: hidden;
 }
@@ -393,6 +401,7 @@ body {
     <div class="header-left">
       <div class="room-id">房间: <span id="roomIdDisplay"></span></div>
       <div class="pot-badge" id="potBadge">Pot: 0</div>
+      <div class="member-list" id="memberList"></div>
     </div>
     <div class="header-actions">
       <button class="btn btn-sm btn-outline" onclick="copyLink()">复制链接</button>
@@ -491,7 +500,14 @@ if (roomFromUrl) {
 function connectWS(roomId, onOpen) {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}/api/ws?room=${encodeURIComponent(roomId)}`);
-  ws.onopen = () => { if (onOpen) onOpen(); };
+  ws.onopen = () => {
+    if (onOpen) {
+      onOpen();
+    } else if (myName) {
+      // Reconnecting - tell DO who we are
+      ws.send(JSON.stringify({ type: 'reconnect', name: myName }));
+    }
+  };
   ws.onmessage = (event) => {
     const msg = JSON.parse(event.data);
     if (msg.type === 'room-created') {
@@ -508,6 +524,7 @@ function connectWS(roomId, onOpen) {
       renderMyBar(msg.data);
       renderOthers(msg.data);
       renderLogs(msg.data);
+      renderMemberList(msg.data);
       document.getElementById('roundBadge').textContent = '第 ' + msg.data.currentRound + ' 轮';
       document.getElementById('potBadge').textContent = 'Pot: ' + msg.data.pot;
     } else if (msg.type === 'settle-result') {
@@ -585,7 +602,8 @@ function enterRoom(roomId) {
 function renderMyBar(data) {
   const me = data.players.find(p => p.name === myName);
   if (!me) return;
-  const maxVal = Math.max(me.score, 100);
+  const maxBet = Math.max(me.score, 5);
+  const maxTake = Math.max(data.pot, 5);
   document.getElementById('myBar').innerHTML = `
     <div class="my-bar-inner" style="flex-direction:column;align-items:stretch">
       <div class="my-info" style="margin-bottom:0.5rem">
@@ -599,10 +617,10 @@ function renderMyBar(data) {
           <input class="amt-input" type="number" id="betAmt" value="0" min="0" onchange="syncSlider()">
           <button onclick="adjustAmt(5)">+</button>
         </div>
-        <input type="range" class="amount-slider" id="amtSlider" min="5" max="${maxVal}" step="5" value="0" oninput="syncFromSlider()">
+        <input type="range" class="amount-slider" id="amtSlider" min="5" max="${maxBet}" step="5" value="0" oninput="syncFromSlider()">
         <div class="action-btns">
-          <button class="btn-bet" onclick="doBet()">Bet</button>
-          <button class="btn-take" onclick="doTake()">Take</button>
+          <button class="btn-bet" onclick="doBet(${maxBet})">Bet</button>
+          <button class="btn-take" onclick="doTake(${maxTake})">Take</button>
           <button class="btn-loan-sm" onclick="doLoan()">借+100</button>
         </div>
       </div>
@@ -625,6 +643,12 @@ function renderOthers(data) {
       ${p.loans > 0 ? `<span class="och-loans">(借${p.loans})</span>` : ''}
     </div>
   `).join('');
+}
+
+function renderMemberList(data) {
+  const el = document.getElementById('memberList');
+  if (!el) return;
+  el.innerHTML = data.players.map(p => `<span class="member-name">${p.name}</span>`).join('');
 }
 
 function adjustAmt(delta) {
@@ -688,19 +712,21 @@ function renderLogs(data) {
   list.scrollTop = list.scrollHeight;
 }
 
-function doBet() {
+function doBet(maxBet) {
   const input = document.getElementById('betAmt');
-  const amount = parseInt(input.value);
+  let amount = parseInt(input.value);
   if (!amount || amount <= 0) return;
+  amount = Math.min(amount, maxBet);
   ws.send(JSON.stringify({ type: 'bet', amount }));
   input.value = 0;
   syncSlider();
 }
 
-function doTake() {
+function doTake(maxTake) {
   const input = document.getElementById('betAmt');
-  const amount = parseInt(input.value);
+  let amount = parseInt(input.value);
   if (!amount || amount <= 0) return;
+  amount = Math.min(amount, maxTake);
   ws.send(JSON.stringify({ type: 'take', amount }));
   input.value = 0;
   syncSlider();

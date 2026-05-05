@@ -5,29 +5,43 @@ export class Room {
     this.logs = [];
     this.currentRound = 1;
     this.created = false;
+    this.loaded = false;
+  }
+
+  async ensureLoaded() {
+    if (this.loaded) return;
+    const data = await this.state.storage.get('room');
+    if (data) {
+      this.players = data.players || [];
+      this.logs = data.logs || [];
+      this.currentRound = data.currentRound || 1;
+      this.created = data.created || false;
+    }
+    this.loaded = true;
+  }
+
+  async save() {
+    await this.state.storage.put('room', {
+      players: this.players,
+      logs: this.logs,
+      currentRound: this.currentRound,
+      created: this.created
+    });
   }
 
   async fetch(request) {
     const url = new URL(request.url);
 
-    // WebSocket upgrade
     if (url.pathname === '/ws') {
-      if (!this.created) {
-        this.created = (await this.state.storage.get('created')) === true;
-      }
+      await this.ensureLoaded();
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
       this.state.acceptWebSocket(server);
-      // Store name on the server socket for later use
-      server.roomPlayerName = null;
       return new Response(null, { status: 101, webSocket: client });
     }
 
-    // Check if room exists
     if (url.pathname === '/check') {
-      if (!this.created) {
-        this.created = (await this.state.storage.get('created')) === true;
-      }
+      await this.ensureLoaded();
       return new Response(JSON.stringify({ exists: this.created }), {
         headers: { 'Content-Type': 'application/json' }
       });
@@ -36,20 +50,23 @@ export class Room {
     return new Response('Not found', { status: 404 });
   }
 
-  // Hibernation API: handle incoming WebSocket messages
   async webSocketMessage(ws, msg) {
+    await this.ensureLoaded();
     let data;
     try { data = JSON.parse(msg); } catch { return; }
+
+    // Find player by their WebSocket attachment tag
+    const wsPlayerName = ws.deserializeAttachment();
 
     switch (data.type) {
       case 'create-room': {
         const name = data.name;
-        this.players.push({ ws, name, score: 1000, originalScore: 1000, loans: 0 });
-        ws.roomPlayerName = name;
+        this.players.push({ name, score: 1000, originalScore: 1000, loans: 0 });
+        ws.serializeAttachment(name);
         this.created = true;
-        this.state.storage.put('created', true);
         const roomId = this.state.id.name;
         ws.send(JSON.stringify({ type: 'room-created', roomId }));
+        await this.save();
         this.broadcastRoomUpdate();
         break;
       }
@@ -59,49 +76,60 @@ export class Room {
           ws.send(JSON.stringify({ type: 'join-result', ok: false, msg: '房间不存在' }));
           return;
         }
-        if (this.players.find(p => p.ws === ws)) {
-          ws.send(JSON.stringify({ type: 'join-result', ok: false, msg: '你已经加入了' }));
-          return;
-        }
         if (this.players.find(p => p.name === name)) {
           ws.send(JSON.stringify({ type: 'join-result', ok: false, msg: '该名称已被使用' }));
           return;
         }
-        this.players.push({ ws, name, score: 1000, originalScore: 1000, loans: 0 });
-        ws.roomPlayerName = name;
+        this.players.push({ name, score: 1000, originalScore: 1000, loans: 0 });
+        ws.serializeAttachment(name);
         ws.send(JSON.stringify({ type: 'join-result', ok: true }));
+        await this.save();
         this.broadcastRoomUpdate();
         break;
       }
+      case 'reconnect': {
+        // Player reconnecting after DO eviction - find them by name
+        const { name } = data;
+        ws.serializeAttachment(name);
+        ws.send(JSON.stringify({ type: 'room-update', data: this.getRoomData() }));
+        break;
+      }
       case 'bet': {
-        const player = this.players.find(p => p.ws === ws);
+        const name = wsPlayerName || ws.deserializeAttachment();
+        const player = this.players.find(p => p.name === name);
         if (!player || data.amount <= 0 || data.amount > player.score) return;
         player.score -= data.amount;
         this.logs.push({ type: 'bet', playerName: player.name, amount: data.amount, round: this.currentRound, timestamp: Date.now() });
+        await this.save();
         this.broadcastRoomUpdate();
         break;
       }
       case 'take': {
-        const player = this.players.find(p => p.ws === ws);
+        const name = wsPlayerName || ws.deserializeAttachment();
+        const player = this.players.find(p => p.name === name);
         if (!player || data.amount <= 0) return;
         player.score += data.amount;
         this.logs.push({ type: 'take', playerName: player.name, amount: data.amount, round: this.currentRound, timestamp: Date.now() });
+        await this.save();
         this.broadcastRoomUpdate();
         break;
       }
       case 'loan': {
-        const player = this.players.find(p => p.ws === ws);
+        const name = wsPlayerName || ws.deserializeAttachment();
+        const player = this.players.find(p => p.name === name);
         if (!player) return;
         player.score += 100;
         player.originalScore += 100;
         player.loans += 100;
         this.logs.push({ type: 'loan', playerName: player.name, amount: 100, round: this.currentRound, timestamp: Date.now() });
+        await this.save();
         this.broadcastRoomUpdate();
         break;
       }
       case 'new-round': {
         this.currentRound++;
         this.logs.push({ type: 'round', round: this.currentRound, timestamp: Date.now() });
+        await this.save();
         this.broadcastRoomUpdate();
         break;
       }
@@ -120,19 +148,20 @@ export class Room {
   }
 
   async webSocketClose(ws, code, reason) {
-    const idx = this.players.findIndex(p => p.ws === ws);
-    if (idx === -1) return;
+    await this.ensureLoaded();
+    const name = ws.deserializeAttachment();
+    const idx = this.players.findIndex(p => p.name === name);
+    if (idx === -1) { ws.close(code, reason); return; }
     const player = this.players[idx];
     this.logs.push({ type: 'leave', playerName: player.name, round: this.currentRound, timestamp: Date.now() });
     this.players.splice(idx, 1);
     ws.close(code, reason);
     if (this.players.length === 0) {
-      this.players = [];
-      this.logs = [];
       this.currentRound = 1;
       this.created = false;
-      this.state.storage.delete('created');
+      await this.state.storage.delete('room');
     } else {
+      await this.save();
       this.broadcastRoomUpdate();
     }
   }
