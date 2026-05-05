@@ -4,6 +4,7 @@ export class Room {
     this.players = [];
     this.logs = [];
     this.currentRound = 1;
+    this.created = false;
   }
 
   async fetch(request) {
@@ -11,6 +12,10 @@ export class Room {
 
     // WebSocket upgrade
     if (url.pathname === '/ws') {
+      // Load created state from storage
+      if (!this.created) {
+        this.created = (await this.state.storage.get('created')) === true;
+      }
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
       this.state.acceptWebSocket(server);
@@ -25,9 +30,12 @@ export class Room {
       return new Response(null, { status: 101, webSocket: client });
     }
 
-    // Check if room exists (has been created)
+    // Check if room exists
     if (url.pathname === '/check') {
-      return new Response(JSON.stringify({ exists: this.players.length > 0 }), {
+      if (!this.created) {
+        this.created = (await this.state.storage.get('created')) === true;
+      }
+      return new Response(JSON.stringify({ exists: this.created }), {
         headers: { 'Content-Type': 'application/json' }
       });
     }
@@ -39,21 +47,23 @@ export class Room {
     switch (msg.type) {
       case 'create-room': {
         const name = msg.name;
-        const roomId = this.state.id.name;
         this.players.push({ ws, name, score: 1000, originalScore: 1000, loans: 0 });
         ws.playerName = name;
+        this.created = true;
+        this.state.storage.put('created', true);
+        const roomId = this.state.id.name;
         ws.send(JSON.stringify({ type: 'room-created', roomId }));
         this.broadcastRoomUpdate();
         break;
       }
       case 'join-room': {
         const { name } = msg;
-        if (this.players.find(p => p.name === name)) {
-          ws.send(JSON.stringify({ type: 'join-result', ok: false, msg: '该名称已被使用' }));
+        if (!this.created) {
+          ws.send(JSON.stringify({ type: 'join-result', ok: false, msg: '房间不存在' }));
           return;
         }
-        if (this.players.length === 0) {
-          ws.send(JSON.stringify({ type: 'join-result', ok: false, msg: '房间不存在' }));
+        if (this.players.find(p => p.name === name)) {
+          ws.send(JSON.stringify({ type: 'join-result', ok: false, msg: '该名称已被使用' }));
           return;
         }
         this.players.push({ ws, name, score: 1000, originalScore: 1000, loans: 0 });
@@ -118,6 +128,8 @@ export class Room {
       this.players = [];
       this.logs = [];
       this.currentRound = 1;
+      this.created = false;
+      this.state.storage.delete('created');
     } else {
       this.broadcastRoomUpdate();
     }
@@ -161,7 +173,6 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // API: generate a room ID (just returns a random ID, actual creation happens on WS connect)
     if (url.pathname === '/api/create-room') {
       const roomId = genRoomId();
       return new Response(JSON.stringify({ roomId }), {
@@ -169,7 +180,6 @@ export default {
       });
     }
 
-    // API: check room exists
     if (url.pathname === '/api/check-room') {
       const roomId = url.searchParams.get('room');
       if (!roomId) return new Response(JSON.stringify({ exists: false }), { headers: { 'Content-Type': 'application/json' } });
@@ -179,19 +189,16 @@ export default {
       return resp;
     }
 
-    // API: WebSocket connection to a room's Durable Object
     if (url.pathname === '/api/ws') {
       const roomId = url.searchParams.get('room');
       if (!roomId) return new Response('Missing room', { status: 400 });
       const id = env.ROOM.idFromName(roomId);
       const stub = env.ROOM.get(id);
-      // Rewrite URL path to /ws for the DO handler
       const newUrl = new URL(request.url);
       newUrl.pathname = '/ws';
       return stub.fetch(new Request(newUrl, request));
     }
 
-    // Static files
     return env.ASSETS.fetch(request);
   }
 };
