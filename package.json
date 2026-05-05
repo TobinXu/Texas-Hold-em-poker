@@ -1,16 +1,12 @@
 {
   "name": "texas-holdem-score",
   "version": "1.0.0",
-  "main": "server.js",
+  "private": true,
   "scripts": {
-    "start": "node server.js"
+    "dev": "wrangler pages dev public --port 3000 --do ROOM=Room --persist-to=.wrangler/state",
+    "deploy": "wrangler pages deploy public"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
-  "dependencies": {
-    "express": "^5.2.1",
-    "socket.io": "^4.8.3"
+  "devDependencies": {
+    "wrangler": "^4.86.0"
   }
 }

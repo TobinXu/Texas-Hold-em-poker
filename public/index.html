@@ -456,9 +456,8 @@ body {
   </div>
 </div>
 
-<script src="/socket.io/socket.io.js"></script>
 <script>
-const socket = io();
+let ws = null;
 let myRoomId = null;
 let myName = null;
 let lastRoomData = null;
@@ -478,24 +477,72 @@ const urlParams = new URLSearchParams(window.location.search);
 const roomFromUrl = urlParams.get('room');
 if (roomFromUrl) {
   document.getElementById('nameViewRoomHint').textContent = '房间号: ' + roomFromUrl.toUpperCase();
-  socket.emit('check-room', roomFromUrl.toUpperCase(), (exists) => {
-    if (exists) showView('nameView');
-    else {
-      document.getElementById('homeError').textContent = '房间 ' + roomFromUrl + ' 不存在';
-      showView('homeView');
+  fetch('/api/check-room?room=' + encodeURIComponent(roomFromUrl.toUpperCase()))
+    .then(r => r.json())
+    .then(res => {
+      if (res.exists) showView('nameView');
+      else {
+        document.getElementById('homeError').textContent = '房间 ' + roomFromUrl + ' 不存在';
+        showView('homeView');
+      }
+    });
+}
+
+function connectWS(roomId, onOpen) {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/api/ws?room=${encodeURIComponent(roomId)}`);
+  ws.onopen = () => { if (onOpen) onOpen(); };
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    if (msg.type === 'room-created') {
+      myRoomId = msg.roomId;
+      window.history.replaceState(null, '', '?room=' + msg.roomId);
+    } else if (msg.type === 'join-result') {
+      if (!msg.ok) {
+        document.getElementById('homeError').textContent = msg.msg || '加入失败';
+        document.getElementById('nameError').textContent = msg.msg || '加入失败';
+        return;
+      }
+    } else if (msg.type === 'room-update') {
+      lastRoomData = msg.data;
+      renderMyBar(msg.data);
+      renderOthers(msg.data);
+      renderLogs(msg.data);
+      document.getElementById('roundBadge').textContent = '第 ' + msg.data.currentRound + ' 轮';
+      document.getElementById('potBadge').textContent = 'Pot: ' + msg.data.pot;
+    } else if (msg.type === 'settle-result') {
+      const tbody = document.getElementById('settleBody');
+      tbody.innerHTML = msg.data.map(p => {
+        const cls = p.profit >= 0 ? 'profit-pos' : 'profit-neg';
+        const str = (p.profit >= 0 ? '+' : '') + p.profit;
+        return `<tr>
+          <td class="name-col">${p.name}</td><td>${p.originalScore}</td>
+          <td>${p.loans}</td><td>${p.currentScore}</td>
+          <td class="${cls}">${str}</td></tr>`;
+      }).join('');
+      document.getElementById('settleModal').classList.add('active');
     }
-  });
+  };
+  ws.onclose = () => {
+    if (myRoomId) setTimeout(() => connectWS(myRoomId), 3000);
+  };
 }
 
 function createRoom() {
   const name = document.getElementById('nameInput').value.trim();
   if (!name) { document.getElementById('homeError').textContent = '请输入你的名称'; return; }
   myName = name;
-  socket.emit('create-room', name, (roomId) => {
-    myRoomId = roomId;
-    window.history.replaceState(null, '', '?room=' + roomId);
-    enterRoom(roomId);
-  });
+  fetch('/api/create-room')
+    .then(r => r.json())
+    .then(res => {
+      if (!res.roomId) { document.getElementById('homeError').textContent = '创建失败'; return; }
+      myRoomId = res.roomId;
+      window.history.replaceState(null, '', '?room=' + res.roomId);
+      connectWS(res.roomId, () => {
+        ws.send(JSON.stringify({ type: 'create-room', name }));
+      });
+      enterRoom(res.roomId);
+    });
 }
 
 function joinRoomFromHome() {
@@ -504,15 +551,17 @@ function joinRoomFromHome() {
   if (!name) { document.getElementById('homeError').textContent = '请输入你的名称'; return; }
   if (!roomId) { document.getElementById('homeError').textContent = '请输入房间号'; return; }
   myName = name;
-  socket.emit('check-room', roomId, (exists) => {
-    if (!exists) { document.getElementById('homeError').textContent = '房间不存在'; return; }
-    socket.emit('join-room', { roomId, name }, (res) => {
-      if (!res.ok) { document.getElementById('homeError').textContent = res.msg; return; }
+  fetch('/api/check-room?room=' + encodeURIComponent(roomId))
+    .then(r => r.json())
+    .then(res => {
+      if (!res.exists) { document.getElementById('homeError').textContent = '房间不存在'; return; }
       myRoomId = roomId;
       window.history.replaceState(null, '', '?room=' + roomId);
+      connectWS(roomId, () => {
+        ws.send(JSON.stringify({ type: 'join-room', name }));
+      });
       enterRoom(roomId);
     });
-  });
 }
 
 function joinRoomFromLink() {
@@ -520,28 +569,18 @@ function joinRoomFromLink() {
   const roomId = roomFromUrl.toUpperCase();
   if (!name) { document.getElementById('nameError').textContent = '请输入你的名称'; return; }
   myName = name;
-  socket.emit('join-room', { roomId, name }, (res) => {
-    if (!res.ok) { document.getElementById('nameError').textContent = res.msg; return; }
-    myRoomId = roomId;
-    window.history.replaceState(null, '', '?room=' + roomId);
-    enterRoom(roomId);
+  myRoomId = roomId;
+  window.history.replaceState(null, '', '?room=' + roomId);
+  connectWS(roomId, () => {
+    ws.send(JSON.stringify({ type: 'join-room', name }));
   });
+  enterRoom(roomId);
 }
 
 function enterRoom(roomId) {
   document.getElementById('roomIdDisplay').textContent = roomId;
   showView('roomView');
 }
-
-// Room update handler
-socket.on('room-update', (data) => {
-  lastRoomData = data;
-  renderMyBar(data);
-  renderOthers(data);
-  renderLogs(data);
-  document.getElementById('roundBadge').textContent = '第 ' + data.currentRound + ' 轮';
-  document.getElementById('potBadge').textContent = 'Pot: ' + data.pot;
-});
 
 function renderMyBar(data) {
   const me = data.players.find(p => p.name === myName);
@@ -653,7 +692,7 @@ function doBet() {
   const input = document.getElementById('betAmt');
   const amount = parseInt(input.value);
   if (!amount || amount <= 0) return;
-  socket.emit('bet', amount);
+  ws.send(JSON.stringify({ type: 'bet', amount }));
   input.value = 0;
   syncSlider();
 }
@@ -662,13 +701,13 @@ function doTake() {
   const input = document.getElementById('betAmt');
   const amount = parseInt(input.value);
   if (!amount || amount <= 0) return;
-  socket.emit('take', amount);
+  ws.send(JSON.stringify({ type: 'take', amount }));
   input.value = 0;
   syncSlider();
 }
 
-function doLoan() { socket.emit('loan'); }
-function newRound() { socket.emit('new-round'); }
+function doLoan() { ws.send(JSON.stringify({ type: 'loan' })); }
+function newRound() { ws.send(JSON.stringify({ type: 'new-round' })); }
 
 function copyLink() {
   const url = window.location.origin + '?room=' + myRoomId;
@@ -680,20 +719,7 @@ function copyLink() {
   }).catch(() => { prompt('复制链接:', url); });
 }
 
-function requestSettle() { socket.emit('settle'); }
-
-socket.on('settle-result', (data) => {
-  const tbody = document.getElementById('settleBody');
-  tbody.innerHTML = data.map(p => {
-    const cls = p.profit >= 0 ? 'profit-pos' : 'profit-neg';
-    const str = (p.profit >= 0 ? '+' : '') + p.profit;
-    return `<tr>
-      <td class="name-col">${p.name}</td><td>${p.originalScore}</td>
-      <td>${p.loans}</td><td>${p.currentScore}</td>
-      <td class="${cls}">${str}</td></tr>`;
-  }).join('');
-  document.getElementById('settleModal').classList.add('active');
-});
+function requestSettle() { ws.send(JSON.stringify({ type: 'settle' })); }
 
 function closeSettle() { document.getElementById('settleModal').classList.remove('active'); }
 
