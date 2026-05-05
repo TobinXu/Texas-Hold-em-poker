@@ -118,10 +118,10 @@ export class Room {
         const name = wsPlayerName || ws.deserializeAttachment();
         const player = this.players.find(p => p.name === name);
         if (!player) return;
-        player.score += 100;
-        player.originalScore += 100;
-        player.loans += 100;
-        this.logs.push({ type: 'loan', playerName: player.name, amount: 100, round: this.currentRound, timestamp: Date.now() });
+        player.score += 1000;
+        player.originalScore += 1000;
+        player.loans += 1000;
+        this.logs.push({ type: 'loan', playerName: player.name, amount: 1000, round: this.currentRound, timestamp: Date.now() });
         await this.save();
         this.broadcastRoomUpdate();
         break;
