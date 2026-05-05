@@ -185,7 +185,10 @@ export default {
       if (!roomId) return new Response('Missing room', { status: 400 });
       const id = env.ROOM.idFromName(roomId);
       const stub = env.ROOM.get(id);
-      return stub.fetch(request);
+      // Rewrite URL path to /ws for the DO handler
+      const newUrl = new URL(request.url);
+      newUrl.pathname = '/ws';
+      return stub.fetch(new Request(newUrl, request));
     }
 
     // Static files
