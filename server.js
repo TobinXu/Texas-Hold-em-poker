@@ -96,10 +96,10 @@ io.on('connection', (socket) => {
     if (!room) return;
     const player = room.players.find(p => p.id === socket.id);
     if (!player) return;
-    player.score += 100;
-    player.originalScore += 100;
-    player.loans += 100;
-    const log = { type: 'loan', playerName: player.name, amount: 100, round: room.currentRound, timestamp: Date.now() };
+    player.score += 1000;
+    player.originalScore += 1000;
+    player.loans += 1000;
+    const log = { type: 'loan', playerName: player.name, amount: 1000, round: room.currentRound, timestamp: Date.now() };
     room.logs.push(log);
     io.to(currentRoom).emit('room-update', getRoomData(currentRoom));
   });

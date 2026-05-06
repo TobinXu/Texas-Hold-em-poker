@@ -214,7 +214,7 @@ body {
   width: 20px; height: 20px; border-radius: 50%;
   background: var(--blue); cursor: pointer; border: none;
 }
-.action-btns { display: flex; gap: 0.4rem; flex-shrink: 0; }
+.action-btns { display: flex; gap: 100px; flex-shrink: 0; }
 .btn-bet {
   background: var(--blue); color: #fff;
   padding: 0.5rem 1rem; border: none; border-radius: 10px;
@@ -273,6 +273,21 @@ body {
   from { opacity:0; transform:translateY(8px); }
   to { opacity:1; transform:translateY(0); }
 }
+.room-loading {
+  position: absolute; top:0; left:0; right:0; bottom:0;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 10;
+}
+.room-loading .spinner {
+  width: 36px; height: 36px;
+  border: 3px solid var(--border); border-top-color: var(--gold);
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+  margin-bottom: 1rem;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.room-loading span { color: var(--text2); font-size: 0.9rem; }
 .log-time {
   color: var(--text3); font-size: 0.7rem; font-family: monospace;
   min-width: 130px; padding-top: 2px; flex-shrink: 0;
@@ -396,7 +411,11 @@ body {
 </div>
 
 <!-- ROOM VIEW -->
-<div id="roomView" class="view">
+<div id="roomView" class="view" style="position:relative">
+  <div class="room-loading" id="roomLoading">
+    <div class="spinner"></div>
+    <span>正在连接房间...</span>
+  </div>
   <div class="room-header">
     <div class="header-left">
       <div class="room-id">房间: <span id="roomIdDisplay"></span></div>
@@ -436,7 +455,7 @@ body {
         <tr>
           <th class="name-col">玩家</th>
           <th>原始积分</th>
-          <th>借分</th>
+          <th>借一手</th>
           <th>当前积分</th>
           <th>净赚</th>
         </tr>
@@ -521,6 +540,8 @@ function connectWS(roomId, onOpen) {
       }
     } else if (msg.type === 'room-update') {
       lastRoomData = msg.data;
+      const loading = document.getElementById('roomLoading');
+      if (loading) loading.style.display = 'none';
       renderMyBar(msg.data);
       renderOthers(msg.data);
       renderLogs(msg.data);
@@ -596,6 +617,8 @@ function joinRoomFromLink() {
 
 function enterRoom(roomId) {
   document.getElementById('roomIdDisplay').textContent = roomId;
+  const loading = document.getElementById('roomLoading');
+  if (loading) loading.style.display = 'flex';
   showView('roomView');
 }
 
@@ -648,7 +671,13 @@ function renderOthers(data) {
 function renderMemberList(data) {
   const el = document.getElementById('memberList');
   if (!el) return;
-  el.innerHTML = data.players.map(p => `<span class="member-name">${p.name}</span>`).join('');
+  const players = data.players;
+  if (players.length <= 5) {
+    el.innerHTML = players.map(p => `<span class="member-name">${p.name}</span>`).join('');
+  } else {
+    el.innerHTML = players.slice(0, 5).map(p => `<span class="member-name">${p.name}</span>`).join('') +
+      `<span class="member-name">+${players.length - 5}</span>`;
+  }
 }
 
 function adjustAmt(delta) {
@@ -695,7 +724,7 @@ function renderLogs(data) {
       text = `<span class="pname">${log.playerName}</span> 取走 <span class="amount take">+${log.amount}</span>`;
     } else if (log.type === 'loan') {
       icon = '<div class="log-icon loan">L</div>';
-      text = `<span class="pname">${log.playerName}</span> 借分 <span class="amount loan">+${log.amount}</span>`;
+      text = `<span class="pname">${log.playerName}</span> 借一手 <span class="amount loan">+${log.amount}</span>`;
     } else if (log.type === 'leave') {
       icon = '<div class="log-icon leave">X</div>';
       text = `<span class="pname">${log.playerName}</span> 离开房间`;
