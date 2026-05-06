@@ -516,10 +516,14 @@ if (roomFromUrl) {
     });
 }
 
+let wsReconnectCount = 0;
+const WS_MAX_RECONNECT = 5;
+
 function connectWS(roomId, onOpen) {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}/api/ws?room=${encodeURIComponent(roomId)}`);
   ws.onopen = () => {
+    wsReconnectCount = 0;
     if (onOpen) {
       onOpen();
     } else if (myName) {
@@ -536,6 +540,9 @@ function connectWS(roomId, onOpen) {
       if (!msg.ok) {
         document.getElementById('homeError').textContent = msg.msg || '加入失败';
         document.getElementById('nameError').textContent = msg.msg || '加入失败';
+        myRoomId = null;
+        ws.close();
+        goHome();
         return;
       }
     } else if (msg.type === 'room-update') {
@@ -555,14 +562,23 @@ function connectWS(roomId, onOpen) {
         const str = (p.profit >= 0 ? '+' : '') + p.profit;
         return `<tr>
           <td class="name-col">${p.name}</td><td>${p.originalScore}</td>
-          <td>${p.loans}</td><td>${p.currentScore}</td>
+          <td>${p.loans / 1000}手</td><td>${p.currentScore}</td>
           <td class="${cls}">${str}</td></tr>`;
       }).join('');
       document.getElementById('settleModal').classList.add('active');
     }
   };
   ws.onclose = () => {
-    if (myRoomId) setTimeout(() => connectWS(myRoomId), 3000);
+    if (!myRoomId) return;
+    wsReconnectCount++;
+    if (wsReconnectCount >= WS_MAX_RECONNECT) {
+      const loading = document.getElementById('roomLoading');
+      if (loading) {
+        loading.innerHTML = `<span style="color:var(--red);font-size:1rem;margin-bottom:0.5rem">连接失败</span><span style="color:var(--text2);font-size:0.85rem">房间可能已关闭</span><button class="btn btn-outline btn-sm" style="margin-top:1rem;width:auto" onclick="goHome()">返回首页</button>`;
+      }
+      return;
+    }
+    setTimeout(() => connectWS(myRoomId), 3000);
   };
 }
 
@@ -627,12 +643,14 @@ function renderMyBar(data) {
   if (!me) return;
   const maxBet = Math.max(me.score, 5);
   const maxTake = Math.max(data.pot, 5);
+  const canTake = data.pot > 0;
+  const loanHands = me.loans / 1000;
   document.getElementById('myBar').innerHTML = `
     <div class="my-bar-inner" style="flex-direction:column;align-items:stretch">
       <div class="my-info" style="margin-bottom:0.5rem">
         <span class="my-name">${me.name}</span>
         <span class="my-score">${me.score}</span>
-        ${me.loans > 0 ? `<span class="my-loans">(已借${me.loans})</span>` : ''}
+        ${me.loans > 0 ? `<span class="my-loans">(已借${loanHands}手)</span>` : ''}
       </div>
       <div class="my-controls">
         <div class="amount-stepper">
@@ -643,7 +661,7 @@ function renderMyBar(data) {
         <input type="range" class="amount-slider" id="amtSlider" min="5" max="${maxBet}" step="5" value="0" oninput="syncFromSlider()">
         <div class="action-btns">
           <button class="btn-bet" onclick="doBet(${maxBet})">Bet</button>
-          <button class="btn-take" onclick="doTake(${maxTake})">Take</button>
+          <button class="btn-take" onclick="doTake(${maxTake})" ${canTake ? '' : 'disabled style="opacity:0.4;cursor:not-allowed"'}>Take</button>
           <button class="btn-loan-sm" onclick="doLoan()">借一手</button>
         </div>
       </div>
@@ -663,7 +681,7 @@ function renderOthers(data) {
     <div class="other-chip">
       <span class="och-name">${p.name}</span>
       <span class="och-score">${p.score}</span>
-      ${p.loans > 0 ? `<span class="och-loans">(借${p.loans})</span>` : ''}
+      ${p.loans > 0 ? `<span class="och-loans">(借${p.loans / 1000}手)</span>` : ''}
     </div>
   `).join('');
 }
